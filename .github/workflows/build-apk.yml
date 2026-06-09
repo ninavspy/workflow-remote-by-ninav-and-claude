@@ -87,6 +87,12 @@ jobs:
           # Instala imagemagick para redimensionar
           subprocess.run(['sudo', 'apt-get', 'install', '-y', '-q', 'imagemagick'], check=True)
 
+          # Remove .webp existentes para evitar recursos duplicados
+          import glob
+          for webp in glob.glob('app/src/main/res/mipmap-*/ic_launcher*.webp'):
+              os.remove(webp)
+              print(f"Removido: {webp}")
+
           # Gera cada densidade
           sizes = {
               'mipmap-mdpi':    48,
