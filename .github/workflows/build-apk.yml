@@ -11,6 +11,10 @@ on:
         description: 'Nome do app (aparece no celular)'
         required: true
         default: 'NinaV'
+      icon_base64:
+        description: 'Ícone do app em base64 (PNG 512x512, opcional)'
+        required: false
+        default: ''
 
 jobs:
   build:
@@ -30,12 +34,82 @@ jobs:
         uses: gradle/actions/setup-gradle@v3
 
       - name: Substitui URL no build.gradle.kts
+        env:
+          WEBVIEW_URL: ${{ github.event.inputs.webview_url }}
         run: |
-          sed -i 's|buildConfigField("String", "WEBVIEW_URL", ".*")|buildConfigField("String", "WEBVIEW_URL", "\"${{ github.event.inputs.webview_url }}\"")|' app/build.gradle.kts
+          python3 - <<'EOF'
+          import os, re
+          url = os.environ['WEBVIEW_URL']
+          path = 'app/build.gradle.kts'
+          content = open(path).read()
+          content = re.sub(
+            r'buildConfigField\("String",\s*"WEBVIEW_URL",\s*"[^"]*"\)',
+            f'buildConfigField("String", "WEBVIEW_URL", \\"{url}\\")',
+            content
+          )
+          open(path, 'w').write(content)
+          print(f"URL definida: {url}")
+          EOF
 
       - name: Substitui nome do app no strings.xml
+        env:
+          APP_NAME: ${{ github.event.inputs.app_name }}
         run: |
-          sed -i 's|<string name="app_name">.*</string>|<string name="app_name">${{ github.event.inputs.app_name }}</string>|' app/src/main/res/values/strings.xml
+          python3 - <<'EOF'
+          import os, re
+          name = os.environ['APP_NAME']
+          path = 'app/src/main/res/values/strings.xml'
+          content = open(path).read()
+          content = re.sub(
+            r'<string name="app_name">[^<]*</string>',
+            f'<string name="app_name">{name}</string>',
+            content
+          )
+          open(path, 'w').write(content)
+          print(f"Nome definido: {name}")
+          EOF
+
+      - name: Aplica ícone customizado (se enviado)
+        if: ${{ github.event.inputs.icon_base64 != '' }}
+        env:
+          ICON_B64: ${{ github.event.inputs.icon_base64 }}
+        run: |
+          python3 - <<'EOF'
+          import os, base64, subprocess
+
+          icon_b64 = os.environ['ICON_B64']
+          icon_bytes = base64.b64decode(icon_b64)
+
+          # Salva o PNG original 512x512
+          with open('/tmp/icon_original.png', 'wb') as f:
+              f.write(icon_bytes)
+
+          # Instala imagemagick para redimensionar
+          subprocess.run(['sudo', 'apt-get', 'install', '-y', '-q', 'imagemagick'], check=True)
+
+          # Gera cada densidade
+          sizes = {
+              'mipmap-mdpi':    48,
+              'mipmap-hdpi':    72,
+              'mipmap-xhdpi':   96,
+              'mipmap-xxhdpi':  144,
+              'mipmap-xxxhdpi': 192,
+          }
+
+          for folder, size in sizes.items():
+              path = f'app/src/main/res/{folder}'
+              os.makedirs(path, exist_ok=True)
+              for name in ['ic_launcher.png', 'ic_launcher_round.png']:
+                  out = f'{path}/{name}'
+                  subprocess.run([
+                      'convert', '/tmp/icon_original.png',
+                      '-resize', f'{size}x{size}',
+                      out
+                  ], check=True)
+                  print(f"Gerado: {out}")
+
+          print("Ícones aplicados com sucesso!")
+          EOF
 
       - name: Permissão de execução no gradlew
         run: chmod +x gradlew
